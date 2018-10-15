@@ -1,12 +1,10 @@
 package main
 
-import "blockchain/BLC"
+import (
+    "blockchain/Cli"
+)
 
 func main() {
-    //wallet := Wallet.NewWallet()
-    //address := wallet.GetAddress()
-    //fmt.Printf("address : %s\n", address)
-    //fmt.Printf("validation of address %s is %v\n", address, Wallet.IsValidForAddress([]byte(address)))
-    BLC.CreateBloxkChainWithGenesisBlock("aaa")
-
+    cli := Cli.CLI{}
+    cli.Run()
 }

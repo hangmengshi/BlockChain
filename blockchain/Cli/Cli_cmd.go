@@ -5,7 +5,6 @@ import (
     "fmt"
     "os"
     "blockchain/BLC"
-    "blockchain/Tx"
     "blockchain/Wallet"
 )
 
@@ -72,7 +71,6 @@ func (cli *CLI) send(from []string, to []string, amount []string, nodeID string)
 }
 
 // 实现启动服务的功能
-
 func (cli *CLI) startNode(nodeID string) {
     BLC.StartServer(nodeID)
 }

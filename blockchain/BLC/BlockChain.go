@@ -37,7 +37,7 @@ func DbExists(nodeID string) bool {
 
 //初始化区块链
 func CreateBloxkChainWithGenesisBlock(address string, nodeID string) *BlockChain {
-    if dbExists(nodeID) {
+    if DbExists(nodeID) {
         fmt.Println("创世区块已经存在")
         os.Exit(1)
     }
@@ -114,24 +114,24 @@ func (blockchain *BlockChain) MineNewBlock(from []string, to []string, amount []
     fmt.Printf("\tTO:[%s]\n", to)
     fmt.Printf("\tAMOUNT:[%s]\n", amount)
     // 接收交易
-    var txs []*Transaction // 要打包的交易列表
+    var txs []*Tx.Transcation
     for index, address := range from {
         fmt.Printf("\tfrom:[%s], to[%s], amount:[%s]\n", address, to[index], amount[index])
         value, _ := strconv.Atoi(amount[index])
-        utxoSet := &UTXOSet{blockchain}
-        tx := NewSimpleTransaction(address, to[index], value, blockchain, txs, utxoSet, nodeID)
+        utxoSet := &Tx.UTXOSet{blockchain}
+        tx := Tx.NewTransaction(address, to[index], value, blockchain, txs, utxoSet, nodeID)
         txs = append(txs, tx)
         fmt.Printf("\ttx-hash:%x, tx-vouts:%v, tx-vins:%v\n", tx.TxHash, tx.Vouts, tx.Vins)
     }
     // 给矿工一定的奖励
     // 默认情况下，设置地址列表中的第一个地址为矿工奖励地址
-    tx := NewCoinbaseTransaction(from[0])
+    tx := Tx.NewCoinbaseTra(from[0])
     txs = append(txs, tx)
     // 打包交易
     // 生成新的区块
     var block *Block
     // 从数据库中获取最新区块
-    blockchain.DB.View(func(tx *bolt.Tx) error {
+    blockchain.Db.View(func(tx *bolt.Tx) error {
         b := tx.Bucket([]byte(blockTableName))
         if nil != b {
 	hash := b.Get([]byte("l"))           // 获取最新区块哈希值(当作新生区块的prevHash)
@@ -142,7 +142,7 @@ func (blockchain *BlockChain) MineNewBlock(from []string, to []string, amount []
     })
     // 在生成新区块之前，对交易签名进行验证
     // 在这里验证一下交易签名
-    _txs := []*Transaction{} // 未打包的关联交易
+    _txs := []*Tx.Transcation{} // 未打包的关联交易
     for _, tx := range txs {
         // 验证每一笔交易
         // 第二笔交易引用了第一笔交易的UTXO作为输入
@@ -154,9 +154,9 @@ func (blockchain *BlockChain) MineNewBlock(from []string, to []string, amount []
         _txs = append(_txs, tx)
     }
     // 生成新的区块
-    block = NewBlock(block.Heigth+1, block.Hash, txs)
+    block = NewBlock(block.Hash,txs,block.Index+1 )
     // 持久化新区块
-    blockchain.DB.Update(func(tx *bolt.Tx) error {
+    blockchain.Db.Update(func(tx *bolt.Tx) error {
         b := tx.Bucket([]byte(blockTableName))
         if nil != b {
 	err := b.Put(block.Hash, block.Serialize())
@@ -218,7 +218,6 @@ func BlockchainObject(nodeID string) *BlockChain {
     })
     return &BlockChain{db, tip}
 }
-
 
 //查找所有UTXO
 func (blockchain *BlockChain) FindUTXOMap() map[string]*Tx.AllUTXO {
@@ -361,7 +360,7 @@ func (bc *BlockChain) VerifyTransaction(tx *Tx.Transcation, txs []*Tx.Transcatio
 }
 
 // 将字节数组转成cmd
-func bytesToCommand(bytes []byte) string  {
+func bytesToCommand(bytes []byte) string {
     var command []byte // 接收命令
     for _, b := range bytes {
         if b != 0x0 {
