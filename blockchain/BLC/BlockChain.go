@@ -12,6 +12,8 @@ import (
     "bytes"
     "blockchain/Wallet"
     "crypto/ecdsa"
+    "strconv"
+    "encoding/gob"
 )
 
 const dbName = "bc.db"          //存储区块数据的数据库文件
@@ -24,53 +26,57 @@ type BlockChain struct {
 }
 
 //判断数据库文件是否存在
-func dbExists() bool {
+func DbExists(nodeID string) bool {
+    dbName := fmt.Sprintf(dbName, nodeID)
     if _, err := os.Stat(dbName); os.IsNotExist(err) {
         return false
     }
+
     return true
 }
 
 //初始化区块链
-func CreateBloxkChainWithGenesisBlock(address string) *BlockChain {
-    if dbExists() {
+func CreateBloxkChainWithGenesisBlock(address string, nodeID string) *BlockChain {
+    if dbExists(nodeID) {
         fmt.Println("创世区块已经存在")
         os.Exit(1)
     }
-    //创建或者打开数据
-    db, e := bolt.Open(dbName, 0600, nil)
-    if e != nil {
-        log.Panicf("open the db failed! %v\n", e)
+    dbName := fmt.Sprintf(dbName, nodeID)
+    // 创建或者打开数据
+    db, err := bolt.Open(dbName, 0600, nil)
+    if nil != err {
+        log.Panicf("open the db failed! %v\n", err)
     }
-    var blockHash []byte
-    db.Update(func(tx *bolt.Tx) error {
+    var blockHash []byte // 需要存储到数据库中的区块哈希
+    err = db.Update(func(tx *bolt.Tx) error {
         b := tx.Bucket([]byte(blockTableName))
-        if b == nil {
-	b, e = tx.CreateBucket([]byte(blockTableName))
-	if e != nil {
-	    log.Panicf("create the bucket [%s] failed! %v\n", blockTableName, e)
+        if nil == b {
+	// 添加创世区块
+	b, err = tx.CreateBucket([]byte(blockTableName))
+	if nil != err {
+	    log.Panicf("create the bucket [%s] failed! %v\n", blockTableName, err)
 	}
         }
-        if b != nil {
-	//生成交易
-	txCoinbase := NewCoinbaseTransaction(address)
-	//生成创世区块
-	block := CreateGenesisBlock([]*Tx.Transcation{txCoinbase})
-	err := b.Put(block.Hash, block.Serialize())
+        if nil != b {
+	// 生成交易
+	txCoinbase := Tx.NewCoinbaseTra(address)
+	// 生成创世区块
+	genesisBlock := CreateGenesisBlock([]*Tx.Transcation{txCoinbase})
+	err = b.Put(genesisBlock.Hash, genesisBlock.Serialize())
 	if nil != err {
 	    log.Panicf("put the data of genesisBlock to db failed! %v\n", err)
 	}
-	//存储最新区块的哈希
-	err = b.Put([]byte("1"), block.Hash)
-	if err != nil {
+	// 存储最新区块的哈希
+	err = b.Put([]byte("l"), genesisBlock.Hash)
+	if nil != err {
 	    log.Panicf("put the hash of latest block to db failed! %v\n", err)
 	}
-	blockHash = block.Hash
+	blockHash = genesisBlock.Hash
         }
         return nil
     })
-    if nil != e {
-        log.Panicf("update the data of genesis block failed! %v\n", e)
+    if nil != err {
+        log.Panicf("update the data of genesis block failed! %v\n", err)
     }
     return &BlockChain{db, blockHash}
 }
@@ -100,6 +106,68 @@ func (bc *BlockChain) AddBlock(txs []*Tx.Transcation) {
     if nil != err {
         log.Panicf("update the db of block failed! %v\n", err)
     }
+}
+
+// 通过接收交易，进行打包确认，最终生成新的区块
+func (blockchain *BlockChain) MineNewBlock(from []string, to []string, amount []string, nodeID string) {
+    fmt.Printf("\tFROM:[%s]\n", from)
+    fmt.Printf("\tTO:[%s]\n", to)
+    fmt.Printf("\tAMOUNT:[%s]\n", amount)
+    // 接收交易
+    var txs []*Transaction // 要打包的交易列表
+    for index, address := range from {
+        fmt.Printf("\tfrom:[%s], to[%s], amount:[%s]\n", address, to[index], amount[index])
+        value, _ := strconv.Atoi(amount[index])
+        utxoSet := &UTXOSet{blockchain}
+        tx := NewSimpleTransaction(address, to[index], value, blockchain, txs, utxoSet, nodeID)
+        txs = append(txs, tx)
+        fmt.Printf("\ttx-hash:%x, tx-vouts:%v, tx-vins:%v\n", tx.TxHash, tx.Vouts, tx.Vins)
+    }
+    // 给矿工一定的奖励
+    // 默认情况下，设置地址列表中的第一个地址为矿工奖励地址
+    tx := NewCoinbaseTransaction(from[0])
+    txs = append(txs, tx)
+    // 打包交易
+    // 生成新的区块
+    var block *Block
+    // 从数据库中获取最新区块
+    blockchain.DB.View(func(tx *bolt.Tx) error {
+        b := tx.Bucket([]byte(blockTableName))
+        if nil != b {
+	hash := b.Get([]byte("l"))           // 获取最新区块哈希值(当作新生区块的prevHash)
+	blockBytes := b.Get(hash)            // 得到最新区块(为了获取区块高度)
+	block = DeserializeBlock(blockBytes) // 反序列化
+        }
+        return nil
+    })
+    // 在生成新区块之前，对交易签名进行验证
+    // 在这里验证一下交易签名
+    _txs := []*Transaction{} // 未打包的关联交易
+    for _, tx := range txs {
+        // 验证每一笔交易
+        // 第二笔交易引用了第一笔交易的UTXO作为输入
+        // 第一笔交易还没有被打包到区块中，所以添加到缓存列表中
+        fmt.Printf("txHash : %v\n", tx.TxHash)
+        if !blockchain.VerifyTransaction(tx, _txs) {
+	log.Panic("ERROR : tx [%x] verify failed!")
+        }
+        _txs = append(_txs, tx)
+    }
+    // 生成新的区块
+    block = NewBlock(block.Heigth+1, block.Hash, txs)
+    // 持久化新区块
+    blockchain.DB.Update(func(tx *bolt.Tx) error {
+        b := tx.Bucket([]byte(blockTableName))
+        if nil != b {
+	err := b.Put(block.Hash, block.Serialize())
+	if nil != err {
+	    log.Panicf("update the new block to db failed! %v\n", err)
+	}
+	b.Put([]byte("l"), block.Hash) // 更新数据库中的最新哈希值
+	blockchain.Tip = block.Hash
+        }
+        return nil
+    })
 }
 
 // 遍历输出区块链所有区块的信息
@@ -132,10 +200,25 @@ func (bc *BlockChain) PrintChain() {
 
 }
 
-//返回Blockchain对象
-func BlockchainObjiect(nodeID string) *BlockChain {
-
+// 返回Blockchain 对象
+func BlockchainObject(nodeID string) *BlockChain {
+    dbName := fmt.Sprintf(dbName, nodeID)
+    // 读取数据库
+    db, err := bolt.Open(dbName, 0600, nil)
+    if nil != err {
+        log.Panicf("get the object of blockchain failed! %v\n", err)
+    }
+    var tip []byte // 最新区块的哈希值
+    err = db.View(func(tx *bolt.Tx) error {
+        b := tx.Bucket([]byte(blockTableName))
+        if nil != b {
+	tip = b.Get([]byte("l"))
+        }
+        return nil
+    })
+    return &BlockChain{db, tip}
 }
+
 
 //查找所有UTXO
 func (blockchain *BlockChain) FindUTXOMap() map[string]*Tx.AllUTXO {
@@ -261,5 +344,50 @@ func (blockchain *BlockChain) SignTransaction(tx *Tx.Transcation, privateKey ecd
 
     }
     //实现签名函数
+    tx.Sign(privateKey, prevTXs)
 
+}
+
+// 验证签名
+func (bc *BlockChain) VerifyTransaction(tx *Tx.Transcation, txs []*Tx.Transcation) bool {
+    // 查找指定交易的关联交易
+    prevTxs := make(map[string]Tx.Transcation)
+    for _, vin := range tx.Vins {
+        prevTx := bc.FindTransaction(vin.TxHash, txs)
+        prevTxs[hex.EncodeToString(prevTx.TxHash)] = prevTx
+    }
+
+    return tx.Verify(prevTxs)
+}
+
+// 将字节数组转成cmd
+func bytesToCommand(bytes []byte) string  {
+    var command []byte // 接收命令
+    for _, b := range bytes {
+        if b != 0x0 {
+	command = append(command, b)
+        }
+    }
+    return fmt.Sprintf("%s", command)
+}
+
+// 将结构体序列化为字节数组
+func gobEncode(data interface{}) []byte {
+    var buff bytes.Buffer
+    enc := gob.NewEncoder(&buff)
+    err := enc.Encode(data)
+    if nil != err {
+        log.Panicf("encode the data failed! %v\n", err)
+    }
+    return buff.Bytes()
+}
+
+// 将命令转为字节数组
+// 指令长度最长为12位
+func commandToBytes(command string) []byte {
+    var bytes [12]byte // 命令长度
+    for i, c := range command {
+        bytes[i] = byte(c) // 转换
+    }
+    return bytes[:]
 }
