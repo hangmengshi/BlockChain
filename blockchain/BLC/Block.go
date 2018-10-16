@@ -6,7 +6,7 @@ import (
     "encoding/gob"
     "log"
     "crypto/sha256"
-    "blockchain/Tx"
+
 )
 
 //区块基本结构
@@ -15,17 +15,16 @@ type Block struct {
     TimeStamp int64
     PreHash   []byte
     Hash      []byte
-    //Data      []byte
-    Txs   []*Tx.Transcation //交易数据
+    Txs   []*Transcation //交易数据
     Nonce int64
 }
 
 //创建区块
-func NewBlock(pre []byte, txs []*Tx.Transcation, i int64) *Block {
+func NewBlock(pre []byte, txs []*Transcation, i int64) *Block {
     block := new(Block)
     block.TimeStamp = time.Now().Unix()
     block.PreHash = []byte(pre)
-    //block.Data = []byte(data)
+
     block.Txs = txs
     block.Index = i
     pow := NewPow(block)
@@ -37,7 +36,7 @@ func NewBlock(pre []byte, txs []*Tx.Transcation, i int64) *Block {
 }
 
 //生成创世区块
-func CreateGenesisBlock(txs []*Tx.Transcation) *Block {
+func CreateGenesisBlock(txs []*Transcation) *Block {
     return NewBlock(nil, txs, 1)
 }
 

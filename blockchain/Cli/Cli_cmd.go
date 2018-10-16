@@ -14,7 +14,7 @@ func (cli *CLI) createBlockchainWithGenesis(address string, nodeID string) {
     defer blockchain.Db.Close()
 
     // 设置utxoSet操作
-    utxoSet := &Tx.UTXOSet{blockchain}
+    utxoSet := &BLC.UTXOSet{blockchain}
     utxoSet.ResetUTXOSet() // 重置数据库，主要是更新UTXO表
 }
 
@@ -39,7 +39,7 @@ func (cli *CLI) getBalance(from string, nodeID string) {
     // 获取指定地址的余额
     blockchain := BLC.BlockchainObject(nodeID)
     defer blockchain.Db.Close()
-    utxoSet := &Tx.UTXOSet{blockchain}
+    utxoSet := &BLC.UTXOSet{blockchain}
     amount := utxoSet.GetBalance(from)
     fmt.Printf("\t地址: %s的余额为:%d\n", from, amount)
 }
@@ -66,7 +66,7 @@ func (cli *CLI) send(from []string, to []string, amount []string, nodeID string)
     defer blockchain.Db.Close()
     blockchain.MineNewBlock(from, to, amount, nodeID)
 
-    utxoSet := &Tx.UTXOSet{blockchain}
+    utxoSet := &BLC.UTXOSet{blockchain}
     utxoSet.Update()
 }
 

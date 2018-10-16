@@ -9,7 +9,6 @@ import (
     "blockchain/utl"
 )
 
-
 //Cli 结构
 type CLI struct {
     BC *BLC.BlockChain
@@ -36,7 +35,6 @@ func IsValidCmd() {
         os.Exit(1)
     }
 }
-
 
 //运行函数
 func (cli *CLI) Run() {
